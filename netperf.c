@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdint.h>
 
 /*
  * RETURN CODES:
@@ -11,15 +12,27 @@
  *
  */
 
+#define DEFAULT_ADDRESS "127.0.0.1"
+#define DEFAULT_PORT 5901
+
+#define DEFAULT_STREAMS 1
+#define DEFAULT_UDP_PACKET_SIZE 128
+#define DEFAULT_TIME 10
+#define DEFAULT_BANDWIDTH 1 << 20
+
+char *address = DEFAULT_ADDRESS;
+uint8_t streams = DEFAULT_STREAMS, mode = 0, delay_mode = 0;
+uint16_t  udp_packet_size = DEFAULT_UDP_PACKET_SIZE, port = DEFAULT_PORT;
+uint64_t time = DEFAULT_TIME, bandwidth = DEFAULT_BANDWIDTH;
+
 void error(char *, int);
+void server();
+void client();
 
 int main(int argc, char *argv[]) {
-    char *address = NULL, *ptr, buffer[256];
-    char unsigned streams = 1;
-    short unsigned mode = 0, delay_mode = 0, udp_packet_size = 0;
+    char *ptr, buffer[256];
     int opt;
-    int unsigned port = 0;
-    long unsigned temp, time = 0, bandwidth = 0;
+    uint64_t temp;
 
     while((opt = getopt(argc, argv, ":a:p:scl:b:n:t:d")) != -1) {
         switch(opt) {
@@ -61,12 +74,6 @@ int main(int argc, char *argv[]) {
                                 break;
                             case 'M':
                                 temp = temp << 20;
-                                break;
-                            case 'G':
-                                temp = temp << 30;
-                                break;
-                            case 'T':
-                                temp = temp << 40;
                                 break;
                             default:
                                 sprintf(buffer, "Invalid UDP packet size: %s\n", optarg);
@@ -153,34 +160,36 @@ int main(int argc, char *argv[]) {
         error("Extra arguments\n", 1);
     }
 
-//    char *address, *ptr, buffer[256];
-//    char unsigned streams = 1;
-//    short unsigned mode = 0, delay_mode = 0, udp_packet_size = 0;
-//    int opt;
-//    int unsigned port = 0;
-//    long unsigned temp, time = 0, bandwidth = 0;
-
-    printf("Mode: %u\n", mode);
-    printf("Address: %s\n", address);
-    printf("Port: %u\n", port);
-//    printf("Mode: %u\n", mode);
-
-    if (address == NULL) address = strdup("127.0.0.1");
-    if (port == 0) port = 5901;
-
     printf("Mode: %u\n", mode);
     printf("Address: %s\n", address);
     printf("Port: %u\n", port);
     printf("UDP Packet size: %u\n", udp_packet_size);
-    printf("Bandwidth: %u\n", udp_packet_size);
+    printf("Bandwidth: %lu\n", bandwidth);
     printf("Parralel streams(threads): %u\n", streams);
     printf("Timeout: %lu\n", time);
-//    printf("Mode: %u\n", mode);
 
+    switch(mode) {
+        case 1:
+            server();
+            break;
+        case 2:
+            client();
+            break;
+        default:
+            error("Mode not set (server/client)\n", 1);
+    }
     return 0;
 }
 
 void error(char *message, int status_code) {
     perror(message);
     exit(status_code);
+}
+
+void server() {
+
+}
+
+void client() {
+
 }
