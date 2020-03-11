@@ -31,8 +31,9 @@ uint16_t  udp_packet_size = DEFAULT_UDP_PACKET_SIZE, port = DEFAULT_PORT;
 uint64_t c_time = DEFAULT_TIME, bandwidth = DEFAULT_BANDWIDTH;
 
 void error(char *, int);
-void server();
-void client();
+void setup();
+void server(int sockfd, struct sockaddr_in server_addr);
+void client(int sockfd, struct sockaddr_in server_addr);
 void *handle_inc(void *);
 
 int main(int argc, char *argv[]) {
@@ -174,16 +175,7 @@ int main(int argc, char *argv[]) {
 //    printf("Parralel streams(threads): %u\n", streams);
 //    printf("Timeout: %lu\n", c_time);
 
-    switch(mode) {
-        case 1:
-            server();
-            break;
-        case 2:
-            client();
-            break;
-        default:
-            error("Mode not set (server/client)\n", 1);
-    }
+    setup();
     return 0;
 }
 
@@ -192,11 +184,9 @@ void error(char *message, int status_code) {
     exit(status_code);
 }
 
-void server() {
+void setup() {
     int sockfd;
     struct sockaddr_in server_addr;
-    pthread_t worker;
-    Inc_Connection *client;
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd == -1) error("Socket creation failed...\n", 2);
@@ -208,8 +198,24 @@ void server() {
             error(buffer, 2);
         }
         free(address);
-    } else server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    } else error("Cannot choose client mode without server address.\n", 1);
     server_addr.sin_port = htons(port);
+
+    switch(mode) {
+        case 1:
+            server(sockfd, server_addr);
+            break;
+        case 2:
+            client(sockfd, server_addr);
+            break;
+        default:
+            error("Mode not set (server/client)\n", 1);
+    }
+}
+
+void server(int sockfd, struct sockaddr_in server_addr) {
+    pthread_t worker;
+    Inc_Connection *client;
 
     if (bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr))) error("Socket bind failed.\n", 2);
     if (listen(sockfd, 5)) error("Socket listen failed.\n", 2);
@@ -223,25 +229,12 @@ void server() {
     }
 }
 
-void client() {
-    int sockfd;
-    struct sockaddr_in server_addr, self_addr;
+void client(int sockfd, struct sockaddr_in server_addr) {
+    struct sockaddr_in self_addr;
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd == -1) error("Socket creation failed...\n", 2);
-    memset(&server_addr, 0, sizeof(struct sockaddr_in));
     self_addr.sin_family = AF_INET;
     self_addr.sin_addr.s_addr = INADDR_ANY;
     self_addr.sin_port = htons(0);
-    server_addr.sin_family = AF_INET;
-    if (address) {
-        if (!inet_pton(AF_INET, address, &server_addr.sin_addr)) {
-            sprintf(buffer, "Server address invalid: %s\n", address);
-            error(buffer, 2);
-        }
-        free(address);
-    } else error("Cannot choose client mode without server address.\n", 1);
-    server_addr.sin_port = htons(port);
 
     if (bind(sockfd, (struct sockaddr *) &self_addr, sizeof(self_addr))) error("Socket bind failed.\n", 2);
     if (connect(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr))) error("Connection to server failed.\n", 2);
