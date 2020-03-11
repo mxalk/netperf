@@ -5,12 +5,17 @@
 #include <assert.h>
 #include <stdint.h>
 
+
+#include<sys/socket.h>
+
+#include <pthread.h>
+
 /*
- * RETURN CODES:
- * 0 : OK
- * 1 : Parameter error
- *
- */
+* RETURN CODES:
+* 0 : OK
+* 1 : Parameter error
+*
+*/
 
 #define DEFAULT_ADDRESS "127.0.0.1"
 #define DEFAULT_PORT 5901
@@ -23,173 +28,214 @@
 char *address = DEFAULT_ADDRESS;
 uint8_t streams = DEFAULT_STREAMS, mode = 0, delay_mode = 0;
 uint16_t  udp_packet_size = DEFAULT_UDP_PACKET_SIZE, port = DEFAULT_PORT;
-uint64_t time = DEFAULT_TIME, bandwidth = DEFAULT_BANDWIDTH;
+uint64_t dtime = DEFAULT_TIME, bandwidth = DEFAULT_BANDWIDTH;
+
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 void error(char *, int);
 void server();
 void client();
 
 int main(int argc, char *argv[]) {
-    char *ptr, buffer[256];
-    int opt;
-    uint64_t temp;
+  char *ptr, buffer[256];
+  int opt;
+  uint64_t temp;
 
-    while((opt = getopt(argc, argv, ":a:p:scl:b:n:t:d")) != -1) {
-        switch(opt) {
-            // SERVER - CLIENT
-            case 'a': // INTERFACE ADDRESS TO BIND TO
-                address = strdup(optarg);
-                break;
-            case 'p': // server: port to listen on, client: port to connect to
-                temp = strtoul(optarg, &ptr, 10);
-                if (strlen(ptr)) {
-                    sprintf(buffer, "Invalid port: %s\n", optarg);
-                    error(buffer, 1);
-                }
-                if (!temp || temp > 65535) {
-                    sprintf(buffer, "Port out of range 1-65535(%u)\n", port);
-                    error(buffer, 1);
-                }
-                port = temp;
-                break;
+  while((opt = getopt(argc, argv, ":a:p:scl:b:n:t:d")) != -1) {
+    switch(opt) {
+      // SERVER - CLIENT
+      case 'a': // INTERFACE ADDRESS TO BIND TO
+      address = strdup(optarg);
+      break;
+      case 'p': // server: port to listen on, client: port to connect to
+      temp = strtoul(optarg, &ptr, 10);
+      if (strlen(ptr)) {
+        sprintf(buffer, "Invalid port: %s\n", optarg);
+        error(buffer, 1);
+      }
+      if (!temp || temp > 65535) {
+        sprintf(buffer, "Port out of range 1-65535(%u)\n", port);
+        error(buffer, 1);
+      }
+      port = temp;
+      break;
 
-            // SERVER
-            case 's': // MODE
-                if (mode) error("Cannot set mode multiple times\n", 1);
-                mode = 1;
-                break;
+      // SERVER
+      case 's': // MODE
+      if (mode) error("Cannot set mode multiple times\n", 1);
+      mode = 1;
+      break;
 
-            // CLIENT
-            case 'c': // MODE
-                if (mode) error("Cannot set mode multiple times\n", 1);
-                mode = 2;
-                break;
-            case 'l': // UDP PACKET SIZE
-                temp = strtoul(optarg, &ptr, 10);
-                if (strlen(ptr)) {
-                    if (strlen(ptr)==1) {
-                        switch(*ptr) {
-                            case 'K':
-                                temp = temp << 10;
-                                break;
-                            case 'M':
-                                temp = temp << 20;
-                                break;
-                            default:
-                                sprintf(buffer, "Invalid UDP packet size: %s\n", optarg);
-                                error(buffer, 1);
-                        }
-                    } else {
-                        sprintf(buffer, "Invalid UDP packet size: %s\n", optarg);
-                        error(buffer, 1);
-                    }
-                }
-                if (!temp || temp > 65535) {
-                    sprintf(buffer, "UDP packet size out of range 1-65535(%lu)\n", temp);
-                    error(buffer, 1);
-                }
-                udp_packet_size = temp;
-                break;
-            case 'b': // BANDWIDTH
-                temp = strtoul(optarg, &ptr, 10);
-                if (strlen(ptr)) {
-                    if (strlen(ptr)==1) {
-                        switch(*ptr) {
-                            case 'K':
-                                temp = temp << 10;
-                                break;
-                            case 'M':
-                                temp = temp << 20;
-                                break;
-                            case 'G':
-                                temp = temp << 30;
-                                break;
-                            case 'T':
-                                temp = temp << 40;
-                                break;
-                            default:
-                                sprintf(buffer, "Invalid bandwidth: %s\n", optarg);
-                                error(buffer, 1);
-                        }
-                    } else {
-                            sprintf(buffer, "Invalid bandwidth: %s\n", optarg);
-                            error(buffer, 1);
-                    }
-                }
-                bandwidth = temp;
-                break;
-            case 'n': // NUMBER OF STREAMS
-                temp = strtoul(optarg, &ptr, 10);
-                if (strlen(ptr)) {
-                    sprintf(buffer, "Invalid number of streams: %s\n", optarg);
-                    error(buffer, 1);
-                }
-                if (!temp || temp > 255) {
-                    sprintf(buffer, "Stream number out of range 1-255(%lu)\n", temp);
-                    error(buffer, 1);
-                }
-                streams = temp;
-                break;
-            case 't': // TIMEOUT - 0=indefinitely
-                temp = strtoul(optarg, &ptr, 10);
-                if (strlen(ptr)) {
-                    sprintf(buffer, "Invalid number of seconds: %s\n", optarg);
-                    error(buffer, 1);
-                }
-                time = temp;
-                break;
-            case 'd': // ONE WAY DELAY MODE
-                delay_mode = 1;
-                break;
-
-            // MISC
-            case ':':
-                error("Option needs a value\n", 1);
-            case '?':
-                sprintf(buffer, "Unknown option: %c\n", optopt);
-                error(buffer, 1);
+      // CLIENT
+      case 'c': // MODE
+      if (mode) error("Cannot set mode multiple times\n", 1);
+      mode = 2;
+      break;
+      case 'l': // UDP PACKET SIZE
+      temp = strtoul(optarg, &ptr, 10);
+      if (strlen(ptr)) {
+        if (strlen(ptr)==1) {
+          switch(*ptr) {
+            case 'K':
+            temp = temp << 10;
+            break;
+            case 'M':
+            temp = temp << 20;
+            break;
             default:
-                assert(0);
+            sprintf(buffer, "Invalid UDP packet size: %s\n", optarg);
+            error(buffer, 1);
+          }
+        } else {
+          sprintf(buffer, "Invalid UDP packet size: %s\n", optarg);
+          error(buffer, 1);
         }
-    }
-
-    // optind is for the extra arguments
-    // which are not parsed
-    for(; optind < argc; optind++){
-        printf("extra arguments: %s\n", argv[optind]);
-        error("Extra arguments\n", 1);
-    }
-
-    printf("Mode: %u\n", mode);
-    printf("Address: %s\n", address);
-    printf("Port: %u\n", port);
-    printf("UDP Packet size: %u\n", udp_packet_size);
-    printf("Bandwidth: %lu\n", bandwidth);
-    printf("Parralel streams(threads): %u\n", streams);
-    printf("Timeout: %lu\n", time);
-
-    switch(mode) {
-        case 1:
-            server();
+      }
+      if (!temp || temp > 65535) {
+        sprintf(buffer, "UDP packet size out of range 1-65535(%lu)\n", temp);
+        error(buffer, 1);
+      }
+      udp_packet_size = temp;
+      break;
+      case 'b': // BANDWIDTH
+      temp = strtoul(optarg, &ptr, 10);
+      if (strlen(ptr)) {
+        if (strlen(ptr)==1) {
+          switch(*ptr) {
+            case 'K':
+            temp = temp << 10;
             break;
-        case 2:
-            client();
+            case 'M':
+            temp = temp << 20;
             break;
-        default:
-            error("Mode not set (server/client)\n", 1);
+            case 'G':
+            temp = temp << 30;
+            break;
+            case 'T':
+            temp = temp << 40;
+            break;
+            default:
+            sprintf(buffer, "Invalid bandwidth: %s\n", optarg);
+            error(buffer, 1);
+          }
+        } else {
+          sprintf(buffer, "Invalid bandwidth: %s\n", optarg);
+          error(buffer, 1);
+        }
+      }
+      bandwidth = temp;
+      break;
+      case 'n': // NUMBER OF STREAMS
+      temp = strtoul(optarg, &ptr, 10);
+      if (strlen(ptr)) {
+        sprintf(buffer, "Invalid number of streams: %s\n", optarg);
+        error(buffer, 1);
+      }
+      if (!temp || temp > 255) {
+        sprintf(buffer, "Stream number out of range 1-255(%lu)\n", temp);
+        error(buffer, 1);
+      }
+      streams = temp;
+      break;
+      case 't': // TIMEOUT - 0=indefinitely
+      temp = strtoul(optarg, &ptr, 10);
+      if (strlen(ptr)) {
+        sprintf(buffer, "Invalid number of seconds: %s\n", optarg);
+        error(buffer, 1);
+      }
+      dtime = temp;
+      break;
+      case 'd': // ONE WAY DELAY MODE
+      delay_mode = 1;
+      break;
+
+      // MISC
+      case ':':
+      error("Option needs a value\n", 1);
+      case '?':
+      sprintf(buffer, "Unknown option: %c\n", optopt);
+      error(buffer, 1);
+      default:
+      assert(0);
     }
-    return 0;
+  }
+
+  // optind is for the extra arguments
+  // which are not parsed
+  for(; optind < argc; optind++){
+    printf("extra arguments: %s\n", argv[optind]);
+    error("Extra arguments\n", 1);
+  }
+
+  printf("Mode: %u\n", mode);
+  printf("Address: %s\n", address);
+  printf("Port: %u\n", port);
+  printf("UDP Packet size: %u\n", udp_packet_size);
+  printf("Bandwidth: %lu\n", bandwidth);
+  printf("Parralel streams(threads): %u\n", streams);
+  printf("Timeout: %lu\n", dtime);
+
+  switch(mode) {
+    case 1:
+    server(1);
+    break;
+    case 2:
+    client();
+    break;
+    default:
+    error("Mode not set (server/client)\n", 1);
+  }
+  return 0;
 }
 
 void error(char *message, int status_code) {
-    perror(message);
-    exit(status_code);
+  perror(message);
+  exit(status_code);
 }
 
-void server() {
+void server(int clientsocket) {
+  char receviedMessage[1000];
+  char buffer[1024];
 
+  int socket = clientsocket;
+  recv(socket , receviedMessage , 1024 , 0);
+
+  char *sendMessage = malloc(sizeof(receviedMessage)+20);
+  strcpy(sendMessage, "TESTING MESSAGE"); // create a random fonction ?
+  strcat(sendMessage,receviedMessage);
+  strcpy(buffer,sendMessage);
+  free(sendMessage);
+  pthread_mutex_unlock(&lock);
+  sleep(1);
+  send(socket,buffer,13,0);
+  close(socket);
 }
 
 void client() {
+  char sendMessage[1000];
+  char buffer[1024];
+  int clientsocket;
+  struct sockaddr_in serverAddr;
+
+  // Create TCP socket
+  clientsocket = socket(PF_INET, SOCK_STREAM, 0);
+
+  serverAddr.sin_family = AF_INET;
+  serverAddr.sin_port = DEFAULT_PORT;
+  serverAddr.sin_addr.s_addr = inet_addr(DEFAULT_ADDRESS);
+  socklen_t addr_size = sizeof(serverAddr);
+
+  connect(clientsocket, (struct sockaddr *) &serverAddr, addr_size);
+  strcpy(sendMessage, "TESTING MESSAGE");
+  if( send(clientSocket , sendMessage , strlen(sendMessage) , 0) < 0){
+    perror("Failed to send message %d\n", sendMessage);
+  }
+
+  if(recv(clientsocket, buffer, 1024, 0)<0){
+    perror("Failed to recevieve message %d\n");
+  }
+  printf("Message received: %s\n",buffer);
+  close(clientSocket);
+  pthread_exit(NULL);
 
 }
