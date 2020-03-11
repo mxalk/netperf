@@ -4,6 +4,12 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdint.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+
+#include "structs.h"
 
 /*
  * RETURN CODES:
@@ -12,25 +18,25 @@
  *
  */
 
-#define DEFAULT_ADDRESS "127.0.0.1"
 #define DEFAULT_PORT 5901
-
 #define DEFAULT_STREAMS 1
 #define DEFAULT_UDP_PACKET_SIZE 128
 #define DEFAULT_TIME 10
 #define DEFAULT_BANDWIDTH 1 << 20
 
-char *address = DEFAULT_ADDRESS;
+__thread char buffer[256];
+char *address = NULL;
 uint8_t streams = DEFAULT_STREAMS, mode = 0, delay_mode = 0;
 uint16_t  udp_packet_size = DEFAULT_UDP_PACKET_SIZE, port = DEFAULT_PORT;
-uint64_t time = DEFAULT_TIME, bandwidth = DEFAULT_BANDWIDTH;
+uint64_t c_time = DEFAULT_TIME, bandwidth = DEFAULT_BANDWIDTH;
 
 void error(char *, int);
 void server();
 void client();
+void *handle_inc(void *);
 
 int main(int argc, char *argv[]) {
-    char *ptr, buffer[256];
+    char *ptr;
     int opt;
     uint64_t temp;
 
@@ -136,7 +142,7 @@ int main(int argc, char *argv[]) {
                     sprintf(buffer, "Invalid number of seconds: %s\n", optarg);
                     error(buffer, 1);
                 }
-                time = temp;
+                c_time = temp;
                 break;
             case 'd': // ONE WAY DELAY MODE
                 delay_mode = 1;
@@ -166,7 +172,7 @@ int main(int argc, char *argv[]) {
     printf("UDP Packet size: %u\n", udp_packet_size);
     printf("Bandwidth: %lu\n", bandwidth);
     printf("Parralel streams(threads): %u\n", streams);
-    printf("Timeout: %lu\n", time);
+    printf("Timeout: %lu\n", c_time);
 
     switch(mode) {
         case 1:
@@ -187,9 +193,44 @@ void error(char *message, int status_code) {
 }
 
 void server() {
+    int sockfd, connfd;
+    unsigned int len;
+    struct sockaddr_in server_addr;
+    pthread_t worker;
+    Inc_Connection *client;
 
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) error("Socket creation failed...\n", 2);
+    memset(&server_addr, 0, sizeof(struct sockaddr_in));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (address) {
+        if (!inet_aton(address, &server_addr.sin_addr)) {
+            sprintf(buffer, "Server address invalid: %s\n", address);
+            error(buffer, 2);
+        }
+        free(address);
+    }
+    server_addr.sin_port = htons(port);
+
+    if (bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr))) error("Socket bind failed.\n", 2);
+    if (listen(sockfd, 5)) error("Socket listen failed.\n", 2);
+    while (1) {
+        client = malloc(sizeof(Inc_Connection));
+        client->sockfd = accept(sockfd, (struct sockaddr *) &(client->address), &(client->len));
+        if(pthread_create(&worker, NULL, handle_inc, client)) {
+            fprintf(stderr, "Error spawning worker\n");
+            free(client);
+        }
+    }
 }
 
 void client() {
 
+}
+
+void *handle_inc(void *data) {
+    Inc_Connection conn = *(Inc_Connection *)data;
+    free(data);
+    printf("Incoming connection from '%s' port '%u'\n", inet_ntoa(conn.address.sin_addr), conn.address.sin_port);
 }
