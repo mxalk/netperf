@@ -166,13 +166,13 @@ int main(int argc, char *argv[]) {
         error("Extra arguments\n", 1);
     }
 
-    printf("Mode: %u\n", mode);
-    printf("Address: %s\n", address);
-    printf("Port: %u\n", port);
-    printf("UDP Packet size: %u\n", udp_packet_size);
-    printf("Bandwidth: %lu\n", bandwidth);
-    printf("Parralel streams(threads): %u\n", streams);
-    printf("Timeout: %lu\n", c_time);
+//    printf("Mode: %u\n", mode);
+//    printf("Address: %s\n", address);
+//    printf("Port: %u\n", port);
+//    printf("UDP Packet size: %u\n", udp_packet_size);
+//    printf("Bandwidth: %lu\n", bandwidth);
+//    printf("Parralel streams(threads): %u\n", streams);
+//    printf("Timeout: %lu\n", c_time);
 
     switch(mode) {
         case 1:
@@ -193,8 +193,7 @@ void error(char *message, int status_code) {
 }
 
 void server() {
-    int sockfd, connfd;
-    unsigned int len;
+    int sockfd;
     struct sockaddr_in server_addr;
     pthread_t worker;
     Inc_Connection *client;
@@ -203,14 +202,13 @@ void server() {
     if (sockfd == -1) error("Socket creation failed...\n", 2);
     memset(&server_addr, 0, sizeof(struct sockaddr_in));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (address) {
-        if (!inet_aton(address, &server_addr.sin_addr)) {
+        if (!inet_pton(AF_INET, address, &server_addr.sin_addr)) {
             sprintf(buffer, "Server address invalid: %s\n", address);
             error(buffer, 2);
         }
         free(address);
-    }
+    } else server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(port);
 
     if (bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr))) error("Socket bind failed.\n", 2);
@@ -226,7 +224,27 @@ void server() {
 }
 
 void client() {
+    int sockfd;
+    struct sockaddr_in server_addr, self_addr;
 
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) error("Socket creation failed...\n", 2);
+    memset(&server_addr, 0, sizeof(struct sockaddr_in));
+    self_addr.sin_family = AF_INET;
+    self_addr.sin_addr.s_addr = INADDR_ANY;
+    self_addr.sin_port = htons(0);
+    server_addr.sin_family = AF_INET;
+    if (address) {
+        if (!inet_pton(AF_INET, address, &server_addr.sin_addr)) {
+            sprintf(buffer, "Server address invalid: %s\n", address);
+            error(buffer, 2);
+        }
+        free(address);
+    } else error("Cannot choose client mode without server address.\n", 1);
+    server_addr.sin_port = htons(port);
+
+    if (bind(sockfd, (struct sockaddr *) &self_addr, sizeof(self_addr))) error("Socket bind failed.\n", 2);
+    if (connect(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr))) error("Connection to server failed.\n", 2);
 }
 
 void *handle_inc(void *data) {
