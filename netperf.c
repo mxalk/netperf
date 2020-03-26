@@ -26,9 +26,11 @@
 #define DEFAULT_TIME 10
 #define DEFAULT_BANDWIDTH 1 << 20
 
+#define MAGIC_16 (uint16_t) 0x1337
+
 __thread char buffer[256];
 __thread uint8_t *net_buffer;
-__thread uint32_t net_bufer_size;
+__thread size_t net_bufer_size;
 char *address = NULL;
 uint8_t streams = DEFAULT_STREAMS, mode = 0, delay_mode = 0;
 uint16_t port = DEFAULT_PORT;
@@ -173,6 +175,15 @@ int main(int argc, char *argv[]) {
         error("Extra arguments\n", 1);
     }
 
+    printf("            _                    __ \n"
+            "           | |                  / _|\n"
+            " _ __   ___| |_ _ __   ___ _ __| |_ \n"
+            "| '_ \\ / _ \\ __| '_ \\ / _ \\ '__|  _|\n"
+            "| | | |  __/ |_| |_) |  __/ |  | |  \n"
+            "|_| |_|\\___|\\__| .__/ \\___|_|  |_|  \n"
+            "               | |                  \n"
+            "               |_|                  \n"
+            "\n");
     printf("Mode: %u\n", mode);
     printf("Address: %s\n", address);
     printf("Port: %u\n", port);
@@ -180,6 +191,7 @@ int main(int argc, char *argv[]) {
     printf("Bandwidth: %lu\n", bandwidth);
     printf("Parralel streams(threads): %u\n", streams);
     printf("Timeout: %lu\n", c_time);
+    printf("----------------------------------------\n");
 
     setup();
     return 0;
@@ -227,6 +239,7 @@ void server() {
     socklen_t len;
     int sockfd;
 
+    printf("---------------- SERVER ----------------\n");
     if (bind(tcp_sockfd, (struct sockaddr *) &tcp_server_addr, sizeof(tcp_server_addr))) error("Socket bind failed.\n", 2);
     if (listen(tcp_sockfd, 5)) error("Socket listen failed.\n", 2);
     while (1) {
@@ -248,8 +261,15 @@ void server() {
 }
 
 void client() {
-    struct sockaddr_in tcp_self_addr, udp_serv_addr;
+    struct sockaddr_in tcp_self_addr, udp_self_addr, udp_serv_addr;
+    int udp_sockfd, rnd;
+    socklen_t len;
+    Header h;
+    uint8_t *tmp;
+    size_t size;
+    uint64_t e_time = 0;
 
+    printf("---------------- CLIENT ----------------\n");
     // BUFFERS
     net_buffer = malloc(sizeof(uint16_t));
     net_bufer_size = sizeof(uint16_t);
@@ -267,21 +287,59 @@ void client() {
     send(tcp_sockfd, net_buffer, net_bufer_size, 0);
 
     // SETUP UDP SERVER ADDRESS
-    udp_serv_addr = tcp_server_addr;
     net_bufer_size = sizeof(struct sockaddr_in);
     net_buffer = realloc(net_buffer, net_bufer_size);
     recv(tcp_sockfd, net_buffer, net_bufer_size, 0);
-    udp_serv_addr.sin_port = ntohs(*(uint16_t *)net_buffer);
-    printf("Server UDP port: '%u'\n", udp_serv_addr.sin_port);
+    udp_serv_addr = tcp_server_addr;
+    udp_serv_addr.sin_port = *(uint16_t *)net_buffer;
+    printf("Server UDP port: '%u'\n", ntohs(udp_serv_addr.sin_port));
 
-    return;
+    // SETUP UDP SELF SOCKET
+    if ((udp_sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) error("Socket creation failed", 2);
+    memset(&udp_self_addr, 0, sizeof(struct sockaddr_in));
+    udp_self_addr.sin_family = AF_INET;
+    udp_self_addr.sin_addr.s_addr = INADDR_ANY;
+    udp_self_addr.sin_port = htons(0);
+    if (bind(udp_sockfd, (struct sockaddr *) &udp_self_addr, sizeof(udp_self_addr))) error("Socket bind failed.\n", 2);
+
+    len = sizeof(udp_self_addr);
+    if (getsockname(udp_sockfd, (struct sockaddr *)&udp_self_addr, &len) == -1) error("Getsockname error\n", 2);
+    printf("UDP open, port '%u'\n", ntohs(udp_self_addr.sin_port));
+
+
+    bzero(&h, sizeof(Header));
+    memcpy( &(h.id), "netperf", strlen("netperf")+1);
+    h.type = htons(0x01);
+    h.length = htons(udp_packet_size);
+    h.header_fin = htons(MAGIC_16);
+
+    net_bufer_size = sizeof(uint8_t)*udp_packet_size;
+    net_buffer = realloc(net_buffer, net_bufer_size);
+    tmp = net_buffer;
+    size = sizeof(Header);
+    memcpy(tmp, &h, size);
+    tmp += size;
+
+    size = sizeof(uint8_t)*udp_packet_size-sizeof(Header)-sizeof(MAGIC_16);
+    rnd = open("/dev/urandom", O_RDONLY);
+    read(rnd, tmp, size);
+    close(rnd);
+    tmp += size;
+    *(uint16_t *)tmp = htons(MAGIC_16);
+    do {
+        printf("Sending Header & payload size %u\n", net_bufer_size);
+        sendto(udp_sockfd, net_buffer, net_bufer_size, 0, (struct sockaddr *) &udp_serv_addr, sizeof(udp_serv_addr));
+        sleep(1);
+    } while (++e_time != c_time);
+
 }
 
 
 void *handle_inc(void *data) {
-    struct sockaddr_in udp_self_addr;
+    struct sockaddr_in udp_self_addr, from_addr;
     socklen_t len;
-    ssize_t size;
+    size_t size;
+    Header *h;
     Inc_Connection *conn = (Inc_Connection *)data;
     int udp_sockfd;
 
@@ -296,20 +354,34 @@ void *handle_inc(void *data) {
     udp_packet_size = ntohs(*(uint16_t *)net_buffer);
     printf("Client UDP packet size is %u\n", udp_packet_size);
 
+    // SETUP UDP SELF
+    net_bufer_size = sizeof(Header)+sizeof(uint8_t)*udp_packet_size;
+    net_buffer = realloc(net_buffer, net_bufer_size);
     if ((udp_sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) error("Socket creation failed", 2);
     memset(&udp_self_addr, 0, sizeof(struct sockaddr_in));
     udp_self_addr.sin_family = AF_INET;
     udp_self_addr.sin_addr.s_addr = tcp_server_addr.sin_addr.s_addr;
     udp_self_addr.sin_port = htons(0);
     if (bind(udp_sockfd, (struct sockaddr *) &udp_self_addr, sizeof(udp_self_addr))) error("Socket bind failed.\n", 2);
-    printf("Binding udp address to '%s'\n", inet_ntoa(udp_self_addr.sin_addr));
+    printf("Binding UDP address to '%s'\n", inet_ntoa(udp_self_addr.sin_addr));
 
-    // send udp port
+    // send UDP port
     len = sizeof(udp_self_addr);
     if (getsockname(udp_sockfd, (struct sockaddr *)&udp_self_addr, &len) == -1) error("Getsockname\n", 2);
     printf("UDP open, port '%u'\n", ntohs(udp_self_addr.sin_port));
     send(conn->sockfd, &udp_self_addr.sin_port, sizeof(uint16_t), 0);
 
+    // RECEIVE DATA
+    net_bufer_size = sizeof(uint8_t)*udp_packet_size;
+    net_buffer = realloc(net_buffer, net_bufer_size);
+    do {
+        size = recvfrom(udp_sockfd, net_buffer, net_bufer_size, 0, (struct sockaddr *) &from_addr, &len);
+        printf("UDP data from '%s' port '%u' size '%zu'\n", inet_ntoa(from_addr.sin_addr), ntohs(from_addr.sin_port), size);
+    } while (size);
+
+    close(udp_sockfd);
+    close(conn->sockfd);
     free(conn->self);
     free(data);
+    printf("Worker destruction\n");
 }

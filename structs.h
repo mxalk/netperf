@@ -8,8 +8,9 @@ typedef struct header Header;
 
 struct header {
     char id[8];
-    uint8_t type;
-    uint32_t length;
+    uint16_t type;
+    uint16_t length;
+    uint16_t header_fin;
 };
 
 typedef struct inc_connection Inc_Connection;
