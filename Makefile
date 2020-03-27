@@ -6,8 +6,8 @@ CLIENT_FLAGS= -c  $(BOTH)
 
 BOTH=-p 5001
 
-netperf: netperf.c structs.h
-	$(CC) netperf.c -pthread $(CCFLAGS)
+netperf: netperf.c netperf.h server.c client.c
+	$(CC) netperf.c server.c client.c -pthread $(CCFLAGS)
 
 server: netperf
 	./netperf -s
