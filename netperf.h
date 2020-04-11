@@ -17,19 +17,20 @@
 #define NETPERF_H
 
 void error(char *, int);
-void setup();
 void server();
 void *handle_inc(void *);
-void client();
+void client(uint16_t, uint64_t, uint8_t, uint64_t, uint8_t, uint16_t);
 void *stream(void *);
 float timedifference_msec(struct timeval, struct timeval);
 void hexdump(void *buff, size_t len);
 
 #define DEFAULT_PORT 5001
-#define DEFAULT_STREAMS 1
+#define DEFAULT_STREAMS 4
 #define DEFAULT_UDP_PACKET_SIZE 128
 #define DEFAULT_TIME 10
 #define DEFAULT_BANDWIDTH 1 << 20
+#define DEFAULT_INTERVAL 1
+#define DEFAULT_WAIT 0
 
 #define MAGIC_16 (uint16_t) 0x1337
 
