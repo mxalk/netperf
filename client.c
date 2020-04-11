@@ -71,8 +71,8 @@ void client() {
     unsigned int packets_per_sec = bandwidth/(streams*udp_packet_size);
     float interval = 1/packets_per_sec, sleep_time;
 //    float interval = ((float)(streams*udp_packet_size*8))/bandwidth;
-    struct timeval start, end;
     unsigned int i;
+    pthread_t worker, *workers;
 
 
     bzero(&h, sizeof(Header));
@@ -94,7 +94,32 @@ void client() {
     close(rnd_fd);
     tmp += size;
     *(uint16_t *)tmp = htons(MAGIC_16);
+
+    workers = malloc(sizeof(pthread_t)*streams);
+    for (i=0; i<streams; i++) {
+        if (pthread_create(&worker, NULL, handle_inc, stream)) {
+            fprintf(stderr, "Error spawning worker\n");
+        }
+        workers[i] = worker;
+    }
     do {
+//        printf("Second\n");
+        sleep(sleep_time);
+    } while (++e_time != c_time);
+    for (i=0; i<streams; i++) {
+        pthread_join(workers[i], NULL);
+    }
+    free(workers);
+}
+
+void *stream(void *data) {
+    struct timeval init, start, end;
+    short stop = 0;
+
+//    gettimeofday(&init, NULL);
+//    printf("%ld.%06ld\n", init.tv_sec, init.tv_usec);
+    while (1) {
+        if (stop) break;
         for (i=0; i<packets_per_sec; i++) {
             gettimeofday(&start, NULL);
             sendto(udp_sockfd, net_buffer, net_bufer_size, 0, (struct sockaddr *) &udp_serv_addr,
@@ -104,11 +129,6 @@ void client() {
             if (sleep_time < 0) sleep_time = 0;
             sleep(sleep_time);
         }
-        printf("Second\n");
-    } while (++e_time != c_time);
-
-}
-
-void *stream(void *data) {
-
+    }
+    return NULL;
 }
