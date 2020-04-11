@@ -62,5 +62,7 @@ struct inc_connection {
 //    uint64_t c_time, bandwidth;
 //};
 
+double throughput(double packets, double avePacketSize, double time);
+double goodPut(double packets, double avePacketSize, double time); 
 
 #endif // NETPERF_H
