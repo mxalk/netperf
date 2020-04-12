@@ -19,8 +19,9 @@
 void error(char *, int);
 void server();
 void *handle_inc(void *);
+void *stream_receiver(void *data);
 void client(uint16_t, uint64_t, uint8_t, uint64_t, uint8_t, uint16_t);
-void *stream(void *);
+void *stream_sender(void *);
 float timedifference_msec(struct timeval, struct timeval);
 void hexdump(void *buff, size_t len);
 
@@ -37,14 +38,14 @@ void hexdump(void *buff, size_t len);
 int tcp_sockfd;
 struct sockaddr_in tcp_server_addr;
 
-typedef struct header Header;
+// typedef struct header Header;
 
-struct header {
-    char id[8];
-    uint16_t type;
-    uint16_t length;
-    uint16_t header_fin;
-};
+// struct header {
+//     char id[8];
+//     // uint16_t type;
+//     // uint16_t length;
+//     // uint16_t header_fin;
+// };
 
 typedef struct inc_connection Inc_Connection;
 
