@@ -4,7 +4,9 @@
 
 #include "netperf.h"
 
+extern char *human_formats[];
 extern char *boolean_str[];
+unsigned short stop = 0;
 
 typedef struct threadData
 {
@@ -35,14 +37,18 @@ void client(uint16_t udp_packet_size, uint64_t bandwidth, uint8_t streams, uint6
     ThreadData *data;
     size_t net_buffer_size;
     uint16_t *net_buffer;
+    char *ptr, buffer[512];
 
+    printf("------------------------------------\n");
     printf("---------------- CLIENT ----------------\n");
+    printf("------------------------------------\n");
     printf("UDP Packet size: %u\n", udp_packet_size);
     printf("Bandwidth: %lu\n", bandwidth);
     printf("Parallel streams(threads): %u\n", streams);
     printf("Experiment Time: %lus\n", c_time);
     printf("One Way delay mode: %s\n", boolean_str[delay_mode]);
     printf("Wait time: %u\n", wait);
+    printf("------------------------------------\n");
 
     // CREATE TCP SOCKET
     bzero(&tcp_self_addr, sizeof(struct sockaddr_in));
@@ -120,7 +126,7 @@ void client(uint16_t udp_packet_size, uint64_t bandwidth, uint8_t streams, uint6
     // busy time = delta/interval
 
     float packets_per_sec = bandwidth / (float)(streams * udp_packet_size);
-    float interval = 1000000 / (float)packets_per_sec, sleep_time;
+    float interval = 1000000 / packets_per_sec, sleep_time;
     //    float interval = ((float)(streams*udp_packet_size*8))/bandwidth;
     pthread_t *workers;
     printf("%f\n", interval);
@@ -155,15 +161,29 @@ void client(uint16_t udp_packet_size, uint64_t bandwidth, uint8_t streams, uint6
         sleep(wait);
     }
     // RELEASE BARRIER
-
+    unsigned long throughput, goodput;
     // CONTROL THREAD
     do
     {
         // receive tcp non block data. print once every <print_interval> time
         // in case of stop signal, notify server -- handle sigint
-        usleep(100);
+        recv(tcp_sockfd, net_buffer, net_buffer_size, 0);
+        // printf("Bytes received by server: %s\n", net_buffer);
+        throughput = strtoul((char *)net_buffer, &ptr, 10);
+        ptr++;
+        goodput = strtoul(ptr, &ptr, 10);
+        if (strlen(ptr))
+            continue;
+        strcpy((char *)net_buffer, "0");
+        printf("\t%10s", "THROUGHPUT: ");
+        print_human_format(throughput);
+        printf("\t%10s", "GOODPUT: ");
+        print_human_format(goodput);
+        printf("\n");
+        // usleep(100);
     } while (++e_time != c_time); // e_time should be clock computed and not inc'ed
     // polling based solution above should be fine.
+    stop = 1;
     for (i = 0; i < streams; i++)
         pthread_join(workers[i], NULL);
 
@@ -179,34 +199,25 @@ void *stream_sender(void *data)
 {
     ThreadData *threadData = (ThreadData *)data;
     ssize_t size;
-    unsigned short stop = 0;
+    struct timeval init, start, end;
 
-    printf("STREAM %u\n", threadData->stream_id);
+    // printf("STREAM %u\n", threadData->stream_id);
 
     // create barrier to start simultaneously across streams
-    while (1)
+    gettimeofday(&init, NULL);
+    for (;;)
     {
         if (stop)
             break;
-        printf("STREAM %u sending\n", threadData->stream_id);
+        // printf("STREAM %u sending\n", threadData->stream_id);
         size = sendto(threadData->udp_sockfd, threadData->net_buffer, threadData->net_buffer_size, 0, (struct sockaddr *)&threadData->udp_serv_addr, sizeof(threadData->udp_serv_addr));
-        if (size != threadData->net_buffer_size)
-            printf("STREAM %u sent less\n", threadData->stream_id);
+        // if (size != threadData->net_buffer_size)
+        //     printf("STREAM %u sent less\n", threadData->stream_id);
         usleep(threadData->interval);
     }
 
-    if (size <= 0)
-    {
-        flag = 0;
-    }
-    else
-    {
-        flag = 1;
-    }
-    // struct timeval init, start, end;
     // int msg_count = 0, msg_received_count = 0, flag = 1;
     // clock_t begin = clock();
-    // //    gettimeofday(&init, NULL);
     // //    printf("%ld.%06ld\n", init.tv_sec, init.tv_usec);
 
     // while (1)
@@ -246,4 +257,23 @@ void *stream_sender(void *data)
     // clock_t ending = clock();
     // double time_spent = (double)(ending - begin) / CLOCKS_PER_SEC;
     // printf("\n%d packets sent, %d packets received, %f percent packet loss. Total time: %f ms.\n\n", msg_count, msg_received_count, ((msg_count - msg_received_count) / msg_count) * 100.0, time_spent);
+}
+
+void print_human_format(unsigned long bytes)
+{
+    double eng_format = bytes;
+    unsigned power = 0;
+    while (eng_format > 1024)
+    {
+        power++;
+        eng_format /= 1024;\
+ }
+    printf("%7.2f%sB/s ", eng_format, human_formats[power]);
+    eng_format *= 8;
+    if (eng_format > 1024)
+    {
+        power++;
+        eng_format /= 1024;\
+ }
+    printf("%7.2f%sbps", eng_format, human_formats[power]);
 }

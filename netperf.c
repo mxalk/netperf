@@ -16,6 +16,8 @@ uint64_t c_time = DEFAULT_TIME, bandwidth = DEFAULT_BANDWIDTH;
 
 char *modes[] = {"NoMode", "Server", "Client"};
 char *boolean_str[] = {"Off", "On"};
+char *human_formats[] = {"", "K", "M", "G", "T", "P"};
+
 
 int main(int argc, char *argv[])
 {
@@ -96,9 +98,9 @@ int main(int argc, char *argv[])
                         error(buffer, 1);
                     }
                 }
-                if (temp < 16 || temp > 65535)
+                if (temp < 16 || temp > 65507)
                 {
-                    sprintf(buffer, "UDP packet size out of range 1-65535(%lu)\n", temp);
+                    sprintf(buffer, "UDP packet size out of range 1-65507(%lu)\n", temp);
                     error(buffer, 1);
                 }
                 udp_packet_size = temp;
@@ -134,7 +136,7 @@ int main(int argc, char *argv[])
                         error(buffer, 1);
                     }
                 }
-                bandwidth = temp;
+                bandwidth = temp>>3;
                 break;
             case 'n': // NUMBER OF STREAMS
                 temp = strtoul(optarg, &ptr, 10);
@@ -196,7 +198,10 @@ int main(int argc, char *argv[])
         printf("extra arguments: %s\n", argv[optind]);
         error("Extra arguments\n", 1);
     }
+    if (!address) address = strdup("0.0.0.0");
 
+    printf("------------------------------------\n");
+    printf("------------------------------------\n");
     printf("            _                    __      \n"
            "           | |                  / _|     \n"
            " _ __   ___| |_ _ __   ___ _ __| |_      \n"
@@ -206,10 +211,11 @@ int main(int argc, char *argv[])
            "               | |                       \n"
            "               |_|                       \n"
            "\n");
-    printf("Mode: %s\n", modes[mode]);
-    printf("Address: %s\n", address);
-    printf("Port: %u\n", port);
-    printf("----------------------------------------\n");
+
+    printf("------------------------------------\n");
+    printf("%-9s %s\n", "Mode:", modes[mode]);
+    printf("%-9s %s\n", "Address:", address);
+    printf("%-9s %u\n", "Port:", port);
 
     tcp_sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (tcp_sockfd == -1)

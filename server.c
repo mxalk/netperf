@@ -12,7 +12,7 @@ typedef struct threadData
     uint8_t delay_mode;
     uint16_t udp_packet_size;
 
-    unsigned long *bytes_recved;
+    unsigned long *throughput, *goodput;
     pthread_mutex_t *mutex;
     uint8_t *net_buffer;
     size_t net_buffer_size;
@@ -28,7 +28,10 @@ void server()
     socklen_t len;
     int sockfd;
 
-    printf("---------------- SERVER ----------------\n");
+    printf("------------------------------------\n");
+    printf("-------------- SERVER --------------\n");
+    printf("------------------------------------\n");
+
     if (bind(tcp_sockfd, (struct sockaddr *)&tcp_server_addr, sizeof(tcp_server_addr)) == -1)
         error("Bind", 2);
     if (listen(tcp_sockfd, 5) == -1)
@@ -57,20 +60,21 @@ void server()
             free(remote);
         }
     }
+    printf("Server closing...\n");
 }
 
 void *handle_inc(void *data)
 {
     struct sockaddr_in *udp_self_addr, from_addr;
-    int *udp_sockfd;
-    unsigned short i;
+    char buffer[1024];
+    int *udp_sockfd, tmp;
+    unsigned short i, stop = 0;
     socklen_t len;
-    double packets = 0, totalTime = 0, avePacketSize = 0;
     Inc_Connection *conn = (Inc_Connection *)data;
-    size_t size, net_buffer_size;
-    uint16_t *net_buffer, streams = DEFAULT_STREAMS, delay_mode = 0, udp_packet_size = DEFAULT_UDP_PACKET_SIZE;
+    size_t net_buffer_size;
+    uint16_t *net_buffer, streams, delay_mode = 0, udp_packet_size;
     ThreadData *tdata;
-    unsigned long bytes_recved = 0, bytes_recved_bk;
+    unsigned long throughput = 0, goodput = 0, throughtput_bk, goodput_bk;
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
     printf("Worker handling connection from '%s' port '%u'\n", inet_ntoa(conn->address.sin_addr), ntohs(conn->address.sin_port));
@@ -81,7 +85,7 @@ void *handle_inc(void *data)
     net_buffer = malloc(net_buffer_size);
 
     // send from client through tcp
-    size = recv(conn->sockfd, net_buffer, net_buffer_size, 0);
+    recv(conn->sockfd, net_buffer, net_buffer_size, 0);
     udp_packet_size = ntohs(net_buffer[0]);
     streams = ntohs(net_buffer[1]);
     delay_mode = ntohs(net_buffer[2]);
@@ -114,7 +118,8 @@ void *handle_inc(void *data)
         // here should be broken to one udp_self_addr per thread
         // WORKER
         tdata[i].udp_sock_fd = udp_sockfd[i];
-        tdata[i].bytes_recved = &bytes_recved;
+        tdata[i].throughput = &throughput;
+        tdata[i].goodput = &goodput;
         tdata[i].mutex = &mutex;
         tdata[i].client_addr = &conn->address;
         tdata[i].net_buffer_size = sizeof(uint8_t) * udp_packet_size;
@@ -132,12 +137,21 @@ void *handle_inc(void *data)
 
     for (;;)
     {
-        pthread_mutex_lock(&mutex);
-        bytes_recved_bk = bytes_recved;
-        pthread_mutex_unlock(&mutex);
-        printf("Total bytes received: %lu\n", bytes_recved_bk);
         sleep(1);
+        pthread_mutex_lock(&mutex);
+        throughtput_bk = throughput;
+        throughput = 0;
+        goodput_bk = goodput;
+        goodput = 0;
+        pthread_mutex_unlock(&mutex);
+
+        if (sprintf(buffer, "%lu-%lu", throughtput_bk, goodput_bk) <= 0)
+            continue;
+        send(conn->sockfd, buffer, strlen(buffer)+1, 0);
+        if (stop)
+            break;
     }
+    printf("Server worker stop\n");
 
     //    /*
     free(net_buffer);
@@ -171,29 +185,23 @@ void *stream_receiver(void *data)
     struct sockaddr_in from_addr;
     ThreadData *threadData = (ThreadData *)data;
     unsigned short stop = 0;
+    unsigned long goodput;
 
-    for(;;)
+    for (;;)
     {
-        if (stop) break;
+        if (stop)
+            break;
         len = sizeof(struct sockaddr_in);
         size = recvfrom(threadData->udp_sock_fd, threadData->net_buffer, threadData->net_buffer_size, 0, (struct sockaddr *)&from_addr, &len);
         // printf("UDP data from '%s' port '%u' size '%d'\n", inet_ntoa(from_addr.sin_addr), ntohs(from_addr.sin_port), size);
         if (size > 0)
         {
+            goodput = size;
+            size += 46; // add overheads -- ETHERNET 18 - IPV4 20 - UDP 8
             pthread_mutex_lock(threadData->mutex);
-            *(threadData->bytes_recved) += size;
+            *(threadData->throughput) += size;
+            *(threadData->goodput) += goodput;
             pthread_mutex_unlock(threadData->mutex);
         }
     }
 }
-
-// double goodPut(double packets, double avePacketSize, double time)
-// {
-//     double headerSize = 32 * packets;
-//     return (packets*avePacketSize+headerSize))/time;
-// }
-
-// double throughput(double packets, double avePacketSize, double time)
-// {
-//     return (packets * avePacketSize) / time;
-// }
