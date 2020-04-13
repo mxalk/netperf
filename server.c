@@ -13,11 +13,13 @@ typedef struct threadData
     uint16_t udp_packet_size;
 
     unsigned long *throughput, *goodput;
+    uint32_t *packets;
     pthread_mutex_t *mutex;
     uint8_t *net_buffer;
     size_t net_buffer_size;
+    unsigned short *run;
 
-    struct sockaddr_in *client_addr;
+    struct sockaddr_in *client_addr; // can be removed unless checking receiving data after client port negotiation
 } ThreadData;
 
 void server()
@@ -68,13 +70,14 @@ void *handle_inc(void *data)
     struct sockaddr_in *udp_self_addr, from_addr;
     char buffer[1024];
     int *udp_sockfd, tmp;
-    unsigned short i, stop = 0;
+    unsigned short i, run = 1;
     socklen_t len;
     Inc_Connection *conn = (Inc_Connection *)data;
     size_t net_buffer_size;
     uint16_t *net_buffer, streams, delay_mode = 0, udp_packet_size;
     ThreadData *tdata;
-    unsigned long throughput = 0, goodput = 0, throughtput_bk, goodput_bk;
+    unsigned long throughput = 0, goodput = 0, throughtput_bk, goodput_bk, packets_bk;
+    uint32_t packets = 0;
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
     printf("Worker handling connection from '%s' port '%u'\n", inet_ntoa(conn->address.sin_addr), ntohs(conn->address.sin_port));
@@ -113,6 +116,7 @@ void *handle_inc(void *data)
         len = sizeof(udp_self_addr[i]);
         if (getsockname(udp_sockfd[i], (struct sockaddr *)(udp_self_addr + i), &len) == -1)
             error("Getsockname", 2);
+        fcntl(udp_sockfd[i], F_SETFL, O_NONBLOCK);
         // printf("UDP open, port '%u'\n", ntohs(udp_self_addr[i].sin_port));
         net_buffer[i] = udp_self_addr[i].sin_port;
         // here should be broken to one udp_self_addr per thread
@@ -120,7 +124,9 @@ void *handle_inc(void *data)
         tdata[i].udp_sock_fd = udp_sockfd[i];
         tdata[i].throughput = &throughput;
         tdata[i].goodput = &goodput;
+        tdata[i].packets = &packets;
         tdata[i].mutex = &mutex;
+        tdata[i].run = &run;
         tdata[i].client_addr = &conn->address;
         tdata[i].net_buffer_size = sizeof(uint8_t) * udp_packet_size;
         tdata[i].net_buffer = malloc(tdata[i].net_buffer_size);
@@ -132,75 +138,95 @@ void *handle_inc(void *data)
         printf(", %u", ntohs(udp_self_addr[i].sin_port));
     printf(".\n");
 
+    //barrier to wait for rtt measurement
+
     send(conn->sockfd, net_buffer, net_buffer_size, 0);
     // CONTROL THREAD
-
-    for (;;)
+    fcntl(conn->sockfd, F_SETFL, O_NONBLOCK);
+    while (run)
     {
         sleep(1);
+        errno = 0;
+        recv(conn->sockfd, net_buffer, net_buffer_size, 0);
+        if (errno != EWOULDBLOCK && ntohs(*net_buffer) == MAGIC_16)
+        {
+            printf("STOP signal received\n");
+            run = 0;
+            break;
+        }
+
         pthread_mutex_lock(&mutex);
         throughtput_bk = throughput;
         throughput = 0;
         goodput_bk = goodput;
         goodput = 0;
         pthread_mutex_unlock(&mutex);
-
         if (sprintf(buffer, "%lu-%lu", throughtput_bk, goodput_bk) <= 0)
             continue;
-        send(conn->sockfd, buffer, strlen(buffer)+1, 0);
-        if (stop)
-            break;
+        send(conn->sockfd, buffer, strlen(buffer) + 1, 0);
     }
-    printf("Server worker stop\n");
+    printf("Waiting for streams to finish...\n");
+    for (i = 0; i < streams; i++)
+        pthread_join(workers[i], NULL);
+    printf("Finished.\n");
 
-    //    /*
+    net_buffer_size = sizeof(uint32_t);
+    net_buffer = realloc(net_buffer, net_buffer_size);
+    *((uint32_t *)net_buffer) = htonl(packets);
+    printf("Packets arrived: %lu\n", ntohl(*((uint32_t *)net_buffer)));
+    send(conn->sockfd, net_buffer, net_buffer_size, 0);
+    // send total packets
+
+
+    for (i = 0; i < streams; i++) {
+        free(tdata[i].net_buffer);
+        close(udp_sockfd[i]);
+    }
+    free(tdata);
+    free(workers);
     free(net_buffer);
     free(udp_self_addr);
     free(udp_sockfd);
     close(conn->sockfd);
     free(conn->self);
     free(data);
-    //    */
-    // END
     return NULL;
-    // // --------------------------------------
-
-    // clock_t end = clock();
-    // double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
-    // avePacketSize = avePacketSize / packets;
-    // double goodput = goodPut(packets, avePacketSize, time_spent);
-    // double throughput = throughput(packets, avePacketSize, time_spent);
-    // printf("Average goodPut %f\n", goodput);
-
-    // close(udp_sockfd); // close all
-    // close(conn->sockfd);
-    // free(conn->self);
-    // free(data);
-    // printf("Worker destruction\n");
 }
+
 void *stream_receiver(void *data)
 {
     ssize_t size;
     socklen_t len;
     struct sockaddr_in from_addr;
     ThreadData *threadData = (ThreadData *)data;
-    unsigned short stop = 0;
-    unsigned long goodput;
+    // unsigned short run = 1;
+    unsigned long throughput, goodput, packets;
 
-    for (;;)
+    while (*(threadData->run))
     {
-        if (stop)
-            break;
-        len = sizeof(struct sockaddr_in);
-        size = recvfrom(threadData->udp_sock_fd, threadData->net_buffer, threadData->net_buffer_size, 0, (struct sockaddr *)&from_addr, &len);
-        // printf("UDP data from '%s' port '%u' size '%d'\n", inet_ntoa(from_addr.sin_addr), ntohs(from_addr.sin_port), size);
-        if (size > 0)
+        usleep(1000);
+        goodput = 0;
+        throughput = 0;
+        packets = 0;
+        errno = 0;
+        do
         {
-            goodput = size;
-            size += 46; // add overheads -- ETHERNET 18 - IPV4 20 - UDP 8
+            len = sizeof(struct sockaddr_in);
+            size = recvfrom(threadData->udp_sock_fd, threadData->net_buffer, threadData->net_buffer_size, 0, (struct sockaddr *)&from_addr, &len);
+            // printf("UDP data from '%s' port '%u' size '%d'\n", inet_ntoa(from_addr.sin_addr), ntohs(from_addr.sin_port), size);
+            if (size > 0)
+            {
+                goodput += size;
+                throughput += size + 46; // add overheads -- ETHERNET 18 - IPV4 20 - UDP 8
+                packets += 1;
+            }
+        } while (errno != EWOULDBLOCK && *(threadData->run));
+        if (packets > 0)
+        {
             pthread_mutex_lock(threadData->mutex);
-            *(threadData->throughput) += size;
+            *(threadData->throughput) += throughput;
             *(threadData->goodput) += goodput;
+            *(threadData->packets) += packets;
             pthread_mutex_unlock(threadData->mutex);
         }
     }

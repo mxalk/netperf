@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <sys/time.h>
 #include <signal.h>
+#include <errno.h>
 
 #ifndef NETPERF_H
 #define NETPERF_H
@@ -21,12 +22,12 @@ void server();
 void *handle_inc(void *);
 void *stream_receiver(void *);
 
-void client(uint16_t, uint64_t, uint8_t, uint64_t, uint8_t, uint16_t);
+void client(uint16_t, uint64_t, uint16_t, uint64_t, uint8_t, uint16_t);
 void *stream_sender(void *);
 void print_human_format(unsigned long);
 
 void error(char *, int);
-float timedifference_msec(struct timeval, struct timeval);
+long timedifference_usec(struct timeval, struct timeval);
 void hexdump(void *buff, size_t len);
 
 #define DEFAULT_PORT 5201

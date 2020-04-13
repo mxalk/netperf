@@ -10,8 +10,8 @@
 char buffer[256];
 
 char *address = NULL;
-uint8_t streams = DEFAULT_STREAMS, mode = 0, delay_mode = 0, interval = DEFAULT_INTERVAL;
-uint16_t port = DEFAULT_PORT, udp_packet_size = DEFAULT_UDP_PACKET_SIZE, wait = DEFAULT_WAIT;
+uint8_t mode = 0, delay_mode = 0, interval = DEFAULT_INTERVAL;
+uint16_t streams = DEFAULT_STREAMS, port = DEFAULT_PORT, udp_packet_size = DEFAULT_UDP_PACKET_SIZE, wait = DEFAULT_WAIT;
 uint64_t c_time = DEFAULT_TIME, bandwidth = DEFAULT_BANDWIDTH;
 
 char *modes[] = {"NoMode", "Server", "Client"};
@@ -145,9 +145,9 @@ int main(int argc, char *argv[])
                     sprintf(buffer, "Invalid number of streams: %s\n", optarg);
                     error(buffer, 1);
                 }
-                if (!temp || temp > 255)
+                if (!temp || temp > 65535)
                 {
-                    sprintf(buffer, "Stream number out of range 1-255(%lu)\n", temp);
+                    sprintf(buffer, "Stream number out of range 1-65535(%lu)\n", temp);
                     error(buffer, 1);
                 }
                 streams = temp;
@@ -217,6 +217,8 @@ int main(int argc, char *argv[])
     printf("%-9s %s\n", "Address:", address);
     printf("%-9s %u\n", "Port:", port);
 
+    signal(SIGPIPE, SIG_IGN);
+
     tcp_sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (tcp_sockfd == -1)
         error("Socket creation failed...\n", 2);
@@ -255,9 +257,9 @@ void error(char *message, int status_code)
     exit(status_code);
 }
 
-float timedifference_msec(struct timeval start, struct timeval end)
+long timedifference_usec(struct timeval start, struct timeval end)
 {
-    return (end.tv_sec - start.tv_sec) * 1000.0f + (end.tv_usec - start.tv_usec) / 1000.0f;
+    return (end.tv_sec - start.tv_sec) * 1000000 + end.tv_usec - start.tv_usec;
 }
 
 void hexdump(void *buff, size_t len)
