@@ -18,7 +18,6 @@ char *modes[] = {"NoMode", "Server", "Client"};
 char *boolean_str[] = {"Off", "On"};
 char *human_formats[] = {"", "K", "M", "G", "T", "P"};
 
-
 int main(int argc, char *argv[])
 {
     char *ptr;
@@ -236,6 +235,8 @@ int main(int argc, char *argv[])
     else if (mode == 2)
         error("Cannot choose client mode without server address.\n", 1);
     tcp_server_addr.sin_port = htons(port);
+
+    printf("Remote server '%s'\n", inet_ntoa(tcp_server_addr.sin_addr));
 
     switch (mode)
     {

@@ -60,9 +60,9 @@ void client(uint16_t udp_packet_size, uint64_t bandwidth, uint16_t streams, uint
     tcp_self_addr.sin_addr.s_addr = INADDR_ANY;
     tcp_self_addr.sin_port = htons(0);
     if (bind(tcp_sockfd, (struct sockaddr *)&tcp_self_addr, sizeof(tcp_self_addr)) == -1)
-        error("Socket bind failed.\n", 2);
+        error("Socket bind failed", 2);
     if (connect(tcp_sockfd, (struct sockaddr *)&tcp_server_addr, sizeof(tcp_server_addr)) == -1)
-        error("Connection to server failed.\n", 2);
+        error("Connection to server failed", 2);
 
     // 1. send udp_packet_size, # streams, delay_mode
     // BUFFERS
@@ -92,7 +92,7 @@ void client(uint16_t udp_packet_size, uint64_t bandwidth, uint16_t streams, uint
     for (i = 0; i < streams; i++)
     {
         // setup server socket
-        memcpy(&tcp_server_addr, &(udp_serv_addr[i]), sizeof(struct sockaddr_in));
+        memcpy(&(udp_serv_addr[i]), &tcp_server_addr, sizeof(struct sockaddr_in));
         udp_serv_addr[i].sin_port = net_buffer[i];
     }
     printf("Remote UDP: %u", ntohs(udp_serv_addr[0].sin_port));
@@ -103,7 +103,7 @@ void client(uint16_t udp_packet_size, uint64_t bandwidth, uint16_t streams, uint
     for (i = 0; i < streams; i++)
     {
         // setup self socket
-        memcpy(&tcp_self_addr, udp_self_addr + i, sizeof(struct sockaddr_in));
+        memcpy(udp_self_addr + i, &tcp_self_addr, sizeof(struct sockaddr_in));
         udp_self_addr[i].sin_port = htons(0);
         if ((udp_sockfd[i] = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
             error("Socket", 2);

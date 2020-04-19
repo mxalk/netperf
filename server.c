@@ -107,7 +107,7 @@ void *handle_inc(void *data)
     tdata = malloc(sizeof(ThreadData) * streams);
     for (i = 0; i < streams; i++)
     {
-        memcpy(&tcp_server_addr, udp_self_addr + i, sizeof(struct sockaddr_in));
+        memcpy(udp_self_addr + i, &tcp_server_addr, sizeof(struct sockaddr_in));
         udp_self_addr[i].sin_port = htons(0);
         if ((udp_sockfd[i] = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
             error("Socket", 2);
