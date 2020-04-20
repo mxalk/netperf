@@ -27,7 +27,7 @@ typedef struct threadData
 
 int msg_count = 0, msg_received_count = 0, flag = 1;
 
-void client(uint16_t udp_packet_size, uint64_t bandwidth, uint16_t streams, uint64_t c_time, uint8_t delay_mode, uint16_t wait)
+void client(uint16_t udp_packet_size, uint64_t bandwidth, uint16_t streams, uint64_t c_time, uint8_t delay_mode, uint16_t wait, FILE *f, int f_open)
 {
     struct sockaddr_in tcp_self_addr, *udp_self_addr, *udp_serv_addr;
     int *udp_sockfd, rnd_fd, i;
@@ -43,16 +43,16 @@ void client(uint16_t udp_packet_size, uint64_t bandwidth, uint16_t streams, uint
     pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
     unsigned short run = 1, throttled = 0;
 
-    printf("------------------------------------\n");
-    printf("-------------- CLIENT --------------\n");
-    printf("------------------------------------\n");
-    printf("UDP Packet size: %u\n", udp_packet_size);
-    printf("Bandwidth: %lu\n", bandwidth);
-    printf("Parallel streams(threads): %u\n", streams);
-    printf("Experiment Time: %lus\n", c_time);
-    printf("One Way delay mode: %s\n", boolean_str[delay_mode]);
-    printf("Wait time: %u\n", wait);
-    printf("------------------------------------\n");
+    fprintf(f_open?f:stdout, "------------------------------------\n");
+    fprintf(f_open?f:stdout, "-------------- CLIENT --------------\n");
+    fprintf(f_open?f:stdout, "------------------------------------\n");
+    fprintf(f_open?f:stdout, "UDP Packet size: %u\n", udp_packet_size);
+    fprintf(f_open?f:stdout, "Bandwidth: %lu\n", bandwidth);
+    fprintf(f_open?f:stdout, "Parallel streams(threads): %u\n", streams);
+    fprintf(f_open?f:stdout, "Experiment Time: %lus\n", c_time);
+    fprintf(f_open?f:stdout, "One Way delay mode: %s\n", boolean_str[delay_mode]);
+    fprintf(f_open?f:stdout, "Wait time: %u\n", wait);
+    fprintf(f_open?f:stdout, "------------------------------------\n");
 
     // CREATE TCP SOCKET
     bzero(&tcp_self_addr, sizeof(struct sockaddr_in));
@@ -161,24 +161,24 @@ void client(uint16_t udp_packet_size, uint64_t bandwidth, uint16_t streams, uint
         if (pthread_create(workers + i, NULL, stream_sender, data + i))
             fprintf(stderr, "Error spawning worker\n");
     }
-    printf("------------------------------------\n");
+    fprintf(f_open?f:stdout, "------------------------------------\n");
 
     if (packets_per_sec < 0.5)
     {
-        printf("WARNING! Extremely low packets per second (%.2f)\n", packets_per_sec);
-        printf("         Packet loss will produce error!\n");
+        fprintf(f_open?f:stdout, "WARNING! Extremely low packets per second (%.2f)\n", packets_per_sec);
+        fprintf(f_open?f:stdout, "         Packet loss will produce error!\n");
     }
     else if (packets_per_sec < 1)
     {
-        printf("WARNING! Low packets per second (%.2f)\n", packets_per_sec);
+        fprintf(f_open?f:stdout, "WARNING! Low packets per second (%.2f)\n", packets_per_sec);
     }
 
     if (wait)
     {
-        printf("Introducing the delay of %u seconds before the measurement begins.\n", wait);
+        fprintf(f_open?f:stdout, "Introducing the delay of %u seconds before the measurement begins.\n", wait);
         sleep(wait);
     }
-    printf("------------------------------------\n");
+    fprintf(f_open?f:stdout, "------------------------------------\n");
     // RELEASE BARRIER
     unsigned long throughput, goodput, packets_arrived;
     float packet_loss;
@@ -194,42 +194,42 @@ void client(uint16_t udp_packet_size, uint64_t bandwidth, uint16_t streams, uint
         if (strlen(ptr))
             continue;
         strcpy((char *)net_buffer, "0");
-        printf("\t%10s", "THROUGHPUT: ");
-        print_human_format(throughput);
-        printf("\t%10s", "GOODPUT: ");
-        print_human_format(goodput);
+        fprintf(f_open?f:stdout, "\t%10s", "THROUGHPUT: ");
+        print_human_format(throughput, f, f_open);
+        fprintf(f_open?f:stdout, "\t%10s", "GOODPUT: ");
+        print_human_format(goodput, f, f_open);
         if (throttled)
         {
-            printf("\tthrottling!!");
+            fprintf(f_open?f:stdout, "\tthrottling!!");
             throttled = 0;
         }
-        printf("\n");
+        fprintf(f_open?f:stdout, "\n");
         // usleep(100);
     } while (++e_time != c_time); // e_time should be clock computed and not inc'ed
     // polling based solution above should be fine.
-    printf("Waiting for streams to finish...\n");
+    fprintf(f_open?f:stdout, "Waiting for streams to finish...\n");
     run = 0;
     for (i = 0; i < streams; i++)
         pthread_join(workers[i], NULL);
-    printf("Finished.\n");
+    fprintf(f_open?f:stdout, "Finished.\n");
 
     // send STOP signal
     net_buffer_size = sizeof(uint16_t);
     net_buffer = realloc(net_buffer, net_buffer_size);
     *net_buffer = htons(MAGIC_16);
     send(tcp_sockfd, net_buffer, net_buffer_size, 0);
-    printf("STOP signal sent\n");
+    fprintf(f_open?f:stdout, "STOP signal sent\n");
 
     net_buffer_size = sizeof(uint32_t);
     net_buffer = realloc(net_buffer, net_buffer_size);
     recv(tcp_sockfd, net_buffer, net_buffer_size, 0);
     packets_arrived = ntohl(*((uint32_t *)net_buffer));
-    printf("Packets sent: %lu\nPackets arrived: %lu\n", packets_sent, packets_arrived);
+    fprintf(f_open?f:stdout, "Packets sent: %lu\nPackets arrived: %lu\n", packets_sent, packets_arrived);
     packet_loss = 100 - (100 * packets_arrived / (float)packets_sent);
-    printf("\t%16s %6.2f%%", "PACKET LOSS: ", packet_loss);
+    fprintf(f_open?f:stdout, "\t%16s %6.2f%%", "PACKET LOSS: ", packet_loss);
     if (packet_loss)
-        printf(" (try increaseing threads?)");
-    printf("\n");
+        fprintf(f_open?f:stdout, " (try increaseing threads?)");
+    fprintf(f_open?f:stdout, "\n");
 
     free(net_buffer);
     free(udp_serv_addr);
@@ -274,7 +274,7 @@ void *stream_sender(void *data)
     // printf("Stream %u exiting\n", threadData->stream_id);
 }
 
-void print_human_format(unsigned long bytes)
+void print_human_format(unsigned long bytes, FILE *f, int f_open)
 {
     double eng_format = bytes;
     unsigned power = 0;
@@ -283,12 +283,12 @@ void print_human_format(unsigned long bytes)
         power++;
         eng_format /= 1024;
     }
-    printf("%7.2f%sB/s ", eng_format, human_formats[power]);
+    fprintf(f_open?f:stdout, "%7.2f%sB/s ", eng_format, human_formats[power]);
     eng_format *= 8;
     if (eng_format > 1024)
     {
         power++;
         eng_format /= 1024;
     }
-    printf("%7.2f%sbps", eng_format, human_formats[power]);
+   fprintf(f_open?f:stdout, "%7.2f%sbps", eng_format, human_formats[power]);
 }

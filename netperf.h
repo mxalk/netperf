@@ -22,9 +22,9 @@ void server();
 void *handle_inc(void *);
 void *stream_receiver(void *);
 
-void client(uint16_t, uint64_t, uint16_t, uint64_t, uint8_t, uint16_t);
+void client(uint16_t, uint64_t, uint16_t, uint64_t, uint8_t, uint16_t, FILE *f, int f_open);
 void *stream_sender(void *);
-void print_human_format(unsigned long);
+void print_human_format(unsigned long, FILE *f, int f_open);
 
 void error(char *, int);
 long timedifference_usec(struct timeval, struct timeval);

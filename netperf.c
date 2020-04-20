@@ -8,11 +8,12 @@
 */
 
 char buffer[256];
-
 char *address = NULL;
 uint8_t mode = 0, delay_mode = 0, interval = DEFAULT_INTERVAL;
 uint16_t streams = DEFAULT_STREAMS, port = DEFAULT_PORT, udp_packet_size = DEFAULT_UDP_PACKET_SIZE, wait = DEFAULT_WAIT;
 uint64_t c_time = DEFAULT_TIME, bandwidth = DEFAULT_BANDWIDTH;
+FILE *f;
+int f_open;
 
 char *modes[] = {"NoMode", "Server", "Client"};
 char *boolean_str[] = {"Off", "On"};
@@ -23,7 +24,7 @@ int main(int argc, char *argv[])
     char *ptr;
     int opt;
     uint64_t temp;
-    while ((opt = getopt(argc, argv, ":a:p:i:scl:b:n:t:dw:")) != -1)
+    while ((opt = getopt(argc, argv, ":a:p:i:scl:b:n:t:dw:f:")) != -1)
     {
         switch (opt)
         {
@@ -177,7 +178,10 @@ int main(int argc, char *argv[])
                 }
                 wait = temp;
                 break;
-
+            case 'f':
+                f = fopen(optarg, "w");
+                f_open = 1;
+                break;
                 // MISC
             case ':':
                 printf("Option needs a value\n");
@@ -244,7 +248,7 @@ int main(int argc, char *argv[])
             server();
             break;
         case 2:
-            client(udp_packet_size, bandwidth, streams, c_time, delay_mode, wait);
+            client(udp_packet_size, bandwidth, streams, c_time, delay_mode, wait, f, f_open);
             break;
         default:
             error("Mode not set (server/client)\n", 1);
